@@ -1,0 +1,25 @@
+{
+  "name": "plainfold-scaffold-app-e2e",
+  "version": "1.0.0",
+  "description": "5-tier E2E testing framework for Plainfold apps",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:headed": "playwright test --headed",
+    "test:tier1": "playwright test --grep @tier1",
+    "test:tier2": "playwright test --grep @tier2 --project=chromium-tier2",
+    "test:tier3": "playwright test --project=chromium-tier3",
+    "test:tier4": "playwright test --project=chromium-tier4",
+    "test:tier5": "playwright test --project=chromium-tier5",
+    "test:chromium": "playwright test --project=chromium",
+    "test:report": "playwright show-report",
+    "wait:server": "wait-on http://localhost:5173 --timeout 30000"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.44.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.4.0",
+    "wait-on": "^9.0.5"
+  }
+}

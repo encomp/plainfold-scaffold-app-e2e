@@ -1,0 +1,310 @@
+name: E2E Tests
+
+on:
+  repository_dispatch:
+    types: [app-build-complete]
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  tier1:
+    name: Tier 1 — ${{ matrix.project }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        project:
+          - chromium
+          - firefox
+          - webkit
+          - mobile-chrome
+          - mobile-safari
+    steps:
+      - name: Checkout E2E repo
+        uses: actions/checkout@v4
+
+      - name: Checkout app repo
+        uses: actions/checkout@v4
+        with:
+          repository: encomp/plainfold-scaffold-app  # REPLACE with your app repo
+          path: app
+          token: ${{ secrets.APP_REPO_PAT }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install E2E dependencies
+        run: npm ci
+
+      - name: Install app dependencies
+        run: npm ci --legacy-peer-deps
+        working-directory: app
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: pw-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-${{ runner.os }}-${{ matrix.project }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright browser
+        run: |
+          BROWSER=${{ matrix.project }}
+          case $BROWSER in
+            mobile-safari) BROWSER=webkit ;;
+            mobile-chrome) BROWSER=chromium ;;
+          esac
+          if [ "${{ steps.pw-cache.outputs.cache-hit }}" != "true" ]; then
+            npx playwright install --with-deps $BROWSER
+          else
+            npx playwright install-deps $BROWSER
+          fi
+
+      - name: Start Vite dev server
+        run: npm run dev &
+        working-directory: app
+        env:
+          CI: true
+
+      - name: Wait for dev server
+        run: npx wait-on http://localhost:5173 --timeout 30000
+
+      - name: Run Tier 1 tests — ${{ matrix.project }}
+        run: npx playwright test --project=${{ matrix.project }} tests/e2e/tier1/
+        env:
+          CI: true
+          BASE_URL: http://localhost:5173
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pw-report-tier1-${{ matrix.project }}-${{ github.run_id }}
+          path: playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  tier2:
+    name: Tier 2 — Responsive
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: tier1
+    if: ${{ !cancelled() }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: encomp/plainfold-scaffold-app
+          path: app
+          token: ${{ secrets.APP_REPO_PAT }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm ci --legacy-peer-deps
+        working-directory: app
+      - uses: actions/cache@v4
+        id: pw-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-${{ runner.os }}-chromium-${{ hashFiles('package-lock.json') }}
+      - name: Install Playwright Chromium
+        run: |
+          if [ "${{ steps.pw-cache.outputs.cache-hit }}" != "true" ]; then
+            npx playwright install --with-deps chromium
+          else
+            npx playwright install-deps chromium
+          fi
+      - run: npm run dev &
+        working-directory: app
+        env:
+          CI: true
+      - run: npx wait-on http://localhost:5173 --timeout 30000
+      - name: Run Tier 2 tests
+        run: npx playwright test --project=chromium-tier2 tests/e2e/tier2/
+        env:
+          CI: true
+          BASE_URL: http://localhost:5173
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pw-report-tier2-${{ github.run_id }}
+          path: playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  tier3:
+    name: Tier 3 — i18n
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: tier1
+    if: ${{ !cancelled() }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: encomp/plainfold-scaffold-app
+          path: app
+          token: ${{ secrets.APP_REPO_PAT }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm ci --legacy-peer-deps
+        working-directory: app
+      - uses: actions/cache@v4
+        id: pw-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-${{ runner.os }}-chromium-${{ hashFiles('package-lock.json') }}
+      - name: Install Playwright Chromium
+        run: |
+          if [ "${{ steps.pw-cache.outputs.cache-hit }}" != "true" ]; then
+            npx playwright install --with-deps chromium
+          else
+            npx playwright install-deps chromium
+          fi
+      - run: npm run dev &
+        working-directory: app
+        env:
+          CI: true
+      - run: npx wait-on http://localhost:5173 --timeout 30000
+      - name: Run Tier 3 tests
+        run: npx playwright test --project=chromium-tier3 tests/e2e/tier3/
+        env:
+          CI: true
+          BASE_URL: http://localhost:5173
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pw-report-tier3-${{ github.run_id }}
+          path: playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  tier4:
+    name: Tier 4 — Resilience
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: tier1
+    if: ${{ !cancelled() }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: encomp/plainfold-scaffold-app
+          path: app
+          token: ${{ secrets.APP_REPO_PAT }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm ci --legacy-peer-deps
+        working-directory: app
+      - uses: actions/cache@v4
+        id: pw-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-${{ runner.os }}-chromium-${{ hashFiles('package-lock.json') }}
+      - name: Install Playwright Chromium
+        run: |
+          if [ "${{ steps.pw-cache.outputs.cache-hit }}" != "true" ]; then
+            npx playwright install --with-deps chromium
+          else
+            npx playwright install-deps chromium
+          fi
+      - run: npm run dev &
+        working-directory: app
+        env:
+          CI: true
+      - run: npx wait-on http://localhost:5173 --timeout 30000
+      - name: Run Tier 4 tests
+        run: npx playwright test --project=chromium-tier4 tests/e2e/tier4/
+        env:
+          CI: true
+          BASE_URL: http://localhost:5173
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pw-report-tier4-${{ github.run_id }}
+          path: playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  tier5:
+    name: Tier 5 — Accessibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: tier1
+    if: ${{ !cancelled() }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: encomp/plainfold-scaffold-app
+          path: app
+          token: ${{ secrets.APP_REPO_PAT }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm ci --legacy-peer-deps
+        working-directory: app
+      - uses: actions/cache@v4
+        id: pw-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-${{ runner.os }}-chromium-${{ hashFiles('package-lock.json') }}
+      - name: Install Playwright Chromium
+        run: |
+          if [ "${{ steps.pw-cache.outputs.cache-hit }}" != "true" ]; then
+            npx playwright install --with-deps chromium
+          else
+            npx playwright install-deps chromium
+          fi
+      - run: npm run dev &
+        working-directory: app
+        env:
+          CI: true
+      - run: npx wait-on http://localhost:5173 --timeout 30000
+      - name: Run Tier 5 tests
+        run: npx playwright test --project=chromium-tier5 tests/e2e/tier5/
+        env:
+          CI: true
+          BASE_URL: http://localhost:5173
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pw-report-tier5-${{ github.run_id }}
+          path: playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  e2e-complete:
+    name: E2E Complete
+    runs-on: ubuntu-latest
+    needs: [tier1, tier2, tier3, tier4, tier5]
+    if: always()
+    steps:
+      - name: Check results
+        run: |
+          if [ "${{ needs.tier1.result }}" != "success" ]; then
+            echo "Tier 1 E2E tests failed"
+            exit 1
+          fi
+          echo "All Tier 1 E2E tests passed across all browsers"
+          echo "Tier 2: ${{ needs.tier2.result }}"
+          echo "Tier 3: ${{ needs.tier3.result }}"
+          echo "Tier 4: ${{ needs.tier4.result }}"
+          echo "Tier 5: ${{ needs.tier5.result }}"
